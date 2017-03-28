@@ -4,12 +4,15 @@
       <div class="point-wrapper" v-for="(item,itemIndex) in check">
         <div class="point" v-for="(point,pointIndex) in item.wrapper">
           <div class="center"
+               ref="center"
                :value="point.value"
                :class="{active: point.isActive}"
                @touchstart="getFocus($event,itemIndex,pointIndex)"
                @touchmove="getMove($event,itemIndex,pointIndex)"
                @touchend="getBlur"
-          ></div>
+          >
+            <div class="line"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -85,6 +88,8 @@
         ],
         activeCount: 0,
         value: [],
+        Em: '',
+        line: '',
         tips: {
           first: '请输入手势密码',
           short: '密码太短，至少需要5个点',
@@ -138,16 +143,27 @@
       },
       // 再次输入清空部分数据
       confirm () {
+        this.$refs['center'].forEach((center) => {
+          center.children[0].style.visibility = 'hidden';
+        });
         this.check = this.clone(this.check_backup);
         this.activeCount = 0;
         this.value = [];
         this.tipsShow = this.tips.first;
       },
+      path (height, rotate, pos) {
+        rotate = pos === 1 ? rotate : 180 + rotate;
+        this.line.style.height = height;
+        this.line.style.transform = `rotate(${rotate}deg)`;
+        this.line.style.visibility = 'visible';
+      },
       // 获得焦点
       getFocus (event, itemIndex, pointIndex) {
-        let em = this.check[itemIndex].wrapper[pointIndex];
-        em.isActive = true;
-        this.value = em.value.toString();
+        this.Em = this.check[itemIndex].wrapper[pointIndex];
+        this.Em.isActive = true;
+        // 获取该点下line元素
+        this.line = event.target.childNodes[0];
+        this.value = this.Em.value.toString();
         this.activeCount++;
         this.password[this.inputCount].push(this.value);
       },
@@ -160,6 +176,8 @@
         }
         // 获取元素value
         let newValue = newEm.getAttribute('value');
+        let newLine = newEm.children[0];
+        // 如果鼠标位有效（进入圆圈选中区）
         if (newValue !== null) {
           // 上一个点的value坐标
           let oldItemIndex = this.value.substr(0, 1);
@@ -171,32 +189,71 @@
           let diffX = Math.abs(itemIndex - oldItemIndex);
           let diffY = Math.abs(pointIndex - oldPointIndex);
           // 此情况只存在对顶角
-          if (diffX === 2 && diffY === 2) {
-            let start, end;
+          if (diffX === diffY) {
+            let startX, endX, startY, endY, posX, posY, pos;
+            // 确定Y坐标起止
             if (pointIndex > oldPointIndex) {
-              end = pointIndex;
-              start = oldPointIndex;
+              endY = pointIndex;
+              startY = oldPointIndex;
+              posY = 1;
             } else {
-              end = oldPointIndex;
-              start = pointIndex;
+              endY = oldPointIndex;
+              startY = pointIndex;
+              posY = 0;
             }
-            for (let i = start; i <= end; i++) {
-              if (this.check[i].wrapper[i].isActive) {
-                this.value = `${i},${i}`;
-                this.check[i].wrapper[i].isActive = true;
-                this.activeCount++;
-                this.password[this.inputCount].push(this.value);
+            // 确定X坐标起止
+            if (itemIndex > oldItemIndex) {
+              endX = itemIndex;
+              startX = oldItemIndex;
+              posX = 1;
+            } else {
+              endX = oldItemIndex;
+              startX = itemIndex;
+              posX = 0;
+            }
+            if ((posX === 1 && posY === 1) || (posX === 0 && posY === 1)) {
+              pos = 1;
+            } else {
+              pos = 0;
+            }
+            // ↘️与↖️方向
+            if (itemIndex - oldItemIndex === pointIndex - oldPointIndex) {
+              for (let i = startX, j = startY; i <= endX; i++, j++) {
+                if (!this.check[i].wrapper[j].isActive) {
+                  this.value = `${i},${j}`;
+                  this.check[i].wrapper[j].isActive = true;
+                  this.activeCount++;
+                  this.password[this.inputCount].push(this.value);
+                }
               }
+              let height = (endX - startX) * 78 * Math.sqrt(2) + 'px';
+              this.path(height, -45, pos);
+              this.line = newLine;
+            } else {
+              // ↙️与↗️方向
+              for (let i = startX, j = endY; i <= endX; i++, j--) {
+                if (!this.check[i].wrapper[j].isActive) {
+                  this.value = `${i},${j}`;
+                  this.check[i].wrapper[j].isActive = true;
+                  this.activeCount++;
+                  this.password[this.inputCount].push(this.value);
+                }
+              }
+              let height = (endX - startX) * 78 * Math.sqrt(2) + 'px';
+              this.path(height, -135, pos);
+              this.line = newLine;
             }
           } else if (diffX === 0) {
             // 同排
-            let start, end;
+            let start, end, pos;
             if (pointIndex > oldPointIndex) {
               end = pointIndex;
               start = oldPointIndex;
+              pos = 1;
             } else {
               end = oldPointIndex;
               start = pointIndex;
+              pos = 0;
             }
             for (let i = start; i <= end; ++i) {
               if (!this.check[itemIndex].wrapper[i].isActive) {
@@ -206,15 +263,20 @@
                 this.password[this.inputCount].push(this.value);
               }
             }
+            let height = (end - start) * 78 + 'px';
+            this.path(height, -90, pos);
+            this.line = newLine;
           } else if (diffY === 0) {
             // 同列
-            let start, end;
+            let start, end, pos;
             if (itemIndex > oldItemIndex) {
               end = itemIndex;
               start = oldItemIndex;
+              pos = 1;
             } else {
               end = oldItemIndex;
               start = itemIndex;
+              pos = 0;
             }
             for (let i = start; i <= end; i++) {
               if (!this.check[i].wrapper[pointIndex].isActive) {
@@ -224,11 +286,52 @@
                 this.password[this.inputCount].push(this.value);
               }
             }
+            let height = (end - start) * 78 + 'px';
+            this.path(height, 0, pos);
+            this.line = newLine;
           } else {
+            let startX, endX, startY, endY, posX, posY, pos;
+            // 确定Y坐标起止
+            if (pointIndex > oldPointIndex) {
+              endY = pointIndex;
+              startY = oldPointIndex;
+              posY = 1;
+            } else {
+              endY = oldPointIndex;
+              startY = pointIndex;
+              posY = 0;
+            }
+            // 确定X坐标起止
+            if (itemIndex > oldItemIndex) {
+              endX = itemIndex;
+              startX = oldItemIndex;
+              posX = 1;
+            } else {
+              endX = oldItemIndex;
+              startX = itemIndex;
+              posX = 0;
+            }
+            if ((posX === 1 && posY === 1) || (posX === 0 && posY === 1)) {
+              pos = 1;
+            } else {
+              pos = 0;
+            }
             this.value = `${itemIndex},${pointIndex}`;
             this.check[itemIndex].wrapper[pointIndex].isActive = true;
             this.activeCount++;
-            this.password[this.inputCount].push(this.value)
+            this.password[this.inputCount].push(this.value);
+            let k = (pointIndex - oldPointIndex) / (itemIndex - oldItemIndex);
+            let height = Math.sqrt(5) * 78 + 'px';
+            if (k === 0.5) {
+              this.path(height, -180 / Math.PI * Math.acos(2 / Math.sqrt(5)), pos);
+            } else if (k === -0.5) {
+              this.path(height, -180 / Math.PI * Math.acos(1 / Math.sqrt(5)) - 90, pos);
+            } else if (k === 2) {
+              this.path(height, -180 / Math.PI * Math.acos(1 / Math.sqrt(5)), pos);
+            } else if (k === -2) {
+              this.path(height, -180 / Math.PI * Math.acos(2 / Math.sqrt(5)) - 90, pos);
+            }
+            this.line = newLine;
           }
         }
       },
@@ -305,10 +408,11 @@
     box-sizing border-box
     background rgba(240, 240, 242, 1)
     .container
-      width 235px
-      height 235px
+      width 234px
+      height 234px
       display flex
       flex-direction column
+      margin 0 auto
       .point-wrapper
         display flex
         flex 1
@@ -326,6 +430,30 @@
             border 1px solid #c3c3c4
             border-radius 50%
             background #fff
+            &::before
+              content ''
+              position absolute
+              top 50%
+              left 50%
+              margin-left -2px
+              margin-top -2px
+              width 4px
+              height 4px
+              border-radius 50%
+              background #000
+            .line
+              display inline-block
+              visibility hidden
+              position absolute
+              top 21px
+              left 50%
+              margin-left -1px
+              margin-top -1px
+              width 2px
+              height 78px
+              background red
+              z-index 99
+              transform-origin 1px 0
             &.active
               background #ffa726
               border 1px solid #fd8d00
