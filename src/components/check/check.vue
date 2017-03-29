@@ -31,10 +31,12 @@
 </template>
 <script type="text/ecmascript-6">
   import {saveLocalStorage, getLocalStorage} from '@/common/js/store'
+  import {clone} from '@/common/js/clone'
   export default {
     name: '',
     data () {
       return {
+        width: 86,
         check: [],
         check_backup: [
           {
@@ -88,7 +90,6 @@
         ],
         activeCount: 0,
         value: [],
-        Em: '',
         line: '',
         tips: {
           first: '请输入手势密码',
@@ -107,7 +108,7 @@
     },
     props: ['user'],
     mounted () {
-      this.check = this.clone(this.check_backup);
+      this.check = clone(this.check_backup);
     },
     methods: {
       // 选取工作模式
@@ -115,60 +116,50 @@
         this.reset();
         event.target.id === 'set_paw' ? this.setPaw = true : this.setPaw = false;
       },
-      // 深度复制对象
-      clone (obj) {
-        let tmp;
-        if (obj instanceof Array) {
-          tmp = [];
-          let len = obj.length;
-          for (let i = 0; i < len; i++) {
-            tmp[i] = this.clone(obj[i]);
-          }
-          return tmp;
-        } else if (obj instanceof Object) {
-          tmp = {};
-          for (let k in obj) {
-            tmp[k] = this.clone(obj[k]);
-          }
-          return tmp;
-        } else {
-          return obj;
-        }
-      },
       // 清除所有数据
       reset () {
         this.password = [[], []];
         this.inputCount = 0;
         this.confirm();
       },
-      // 再次输入清空部分数据
+      // 再次输入，清空部分数据
       confirm () {
         this.$refs['center'].forEach((center) => {
           center.children[0].style.visibility = 'hidden';
         });
-        this.check = this.clone(this.check_backup);
+        this.check = clone(this.check_backup);
         this.activeCount = 0;
         this.value = [];
         this.tipsShow = this.tips.first;
       },
+      // 设置路径style
       path (height, rotate, pos) {
         rotate = pos === 1 ? rotate : 180 + rotate;
         this.line.style.height = height;
         this.line.style.transform = `rotate(${rotate}deg)`;
         this.line.style.visibility = 'visible';
       },
+      // 激活点
+      activePoint (itemIndex, pointIndex) {
+        if (!this.check[itemIndex].wrapper[pointIndex].isActive) {
+          this.value = `${itemIndex},${pointIndex}`;
+          this.check[itemIndex].wrapper[pointIndex].isActive = true;
+          this.activeCount++;
+          this.password[this.inputCount].push(this.value);
+        }
+      },
       // 获得焦点
       getFocus (event, itemIndex, pointIndex) {
-        this.Em = this.check[itemIndex].wrapper[pointIndex];
-        this.Em.isActive = true;
+        this.check[itemIndex].wrapper[pointIndex].isActive = true;
+        this.activeCount++;
         // 获取该点下line元素
         this.line = event.target.childNodes[0];
-        this.value = this.Em.value.toString();
-        this.activeCount++;
+        // 这里通过data获取的value是数组，为了方便管理转化为string
+        this.value = this.check[itemIndex].wrapper[pointIndex].value.toString();
         this.password[this.inputCount].push(this.value);
       },
       // 开始移动
-      getMove (event, itemIndex, pointIndex) {
+      getMove (event) {
         // 获取真实元素
         let newEm = document.elementFromPoint(event.touches[0].pageX, event.touches[0].pageY);
         if (newEm.className !== 'center') {
@@ -188,140 +179,82 @@
           // 获取x,y差值
           let diffX = Math.abs(itemIndex - oldItemIndex);
           let diffY = Math.abs(pointIndex - oldPointIndex);
-          // 此情况只存在对顶角
+          // 计算斜率
+          let k = (pointIndex - oldPointIndex) / (itemIndex - oldItemIndex);
+          let startX, endX, startY, endY, posX, posY, pos, height;
+          // 确定posY
+          if (pointIndex > oldPointIndex) {
+            endY = pointIndex;
+            startY = oldPointIndex;
+            posY = 1;
+          } else if (pointIndex === oldPointIndex) {
+            endY = oldPointIndex;
+            startY = pointIndex;
+            posY = 0;
+          } else if (pointIndex < oldPointIndex) {
+            endY = oldPointIndex;
+            startY = pointIndex;
+            posY = -1;
+          }
+          // 确定posX
+          if (itemIndex > oldItemIndex) {
+            endX = itemIndex;
+            startX = oldItemIndex;
+            posX = 1;
+          } else if (itemIndex === oldItemIndex) {
+            endX = oldItemIndex;
+            startX = itemIndex;
+            posX = 0;
+          } else if (itemIndex < oldItemIndex) {
+            endX = oldItemIndex;
+            startX = itemIndex;
+            posX = -1;
+          }
+          /**
+           * 定义第一、四象限为正方向
+           * (posX === 1 && posY === 1) || (posX === 1 && posY === 0) || (posX === 0 && posY === 1) || (posX === -1 && posY === 1)
+           * 对应↘️，→，↓，↗ pos=1
+           * 进行简化如下
+           */
+          if ((posX === 1 && posY !== -1) || (posX !== 1 && posY === 1)) {
+            pos = 1;
+          } else {
+            pos = 0;
+          }
           if (diffX === diffY) {
-            let startX, endX, startY, endY, posX, posY, pos;
-            // 确定Y坐标起止
-            if (pointIndex > oldPointIndex) {
-              endY = pointIndex;
-              startY = oldPointIndex;
-              posY = 1;
-            } else {
-              endY = oldPointIndex;
-              startY = pointIndex;
-              posY = 0;
-            }
-            // 确定X坐标起止
-            if (itemIndex > oldItemIndex) {
-              endX = itemIndex;
-              startX = oldItemIndex;
-              posX = 1;
-            } else {
-              endX = oldItemIndex;
-              startX = itemIndex;
-              posX = 0;
-            }
-            if ((posX === 1 && posY === 1) || (posX === 0 && posY === 1)) {
-              pos = 1;
-            } else {
-              pos = 0;
-            }
-            // ↘️与↖️方向
-            if (itemIndex - oldItemIndex === pointIndex - oldPointIndex) {
+            // 对角线方向
+            if (k === 1) {
+              // ↘️与↖️方向
               for (let i = startX, j = startY; i <= endX; i++, j++) {
-                if (!this.check[i].wrapper[j].isActive) {
-                  this.value = `${i},${j}`;
-                  this.check[i].wrapper[j].isActive = true;
-                  this.activeCount++;
-                  this.password[this.inputCount].push(this.value);
-                }
+                this.activePoint(i, j);
               }
-              let height = (endX - startX) * 78 * Math.sqrt(2) + 'px';
+              height = (endX - startX) * this.width * Math.sqrt(2) + 'px';
               this.path(height, -45, pos);
-              this.line = newLine;
             } else {
               // ↙️与↗️方向
               for (let i = startX, j = endY; i <= endX; i++, j--) {
-                if (!this.check[i].wrapper[j].isActive) {
-                  this.value = `${i},${j}`;
-                  this.check[i].wrapper[j].isActive = true;
-                  this.activeCount++;
-                  this.password[this.inputCount].push(this.value);
-                }
+                this.activePoint(i, j);
               }
-              let height = (endX - startX) * 78 * Math.sqrt(2) + 'px';
+              height = (endX - startX) * this.width * Math.sqrt(2) + 'px';
               this.path(height, -135, pos);
-              this.line = newLine;
             }
           } else if (diffX === 0) {
             // 同排
-            let start, end, pos;
-            if (pointIndex > oldPointIndex) {
-              end = pointIndex;
-              start = oldPointIndex;
-              pos = 1;
-            } else {
-              end = oldPointIndex;
-              start = pointIndex;
-              pos = 0;
+            for (let i = startY; i <= endY; ++i) {
+              this.activePoint(itemIndex, i);
             }
-            for (let i = start; i <= end; ++i) {
-              if (!this.check[itemIndex].wrapper[i].isActive) {
-                this.value = `${itemIndex},${i}`;
-                this.check[itemIndex].wrapper[i].isActive = true;
-                this.activeCount++;
-                this.password[this.inputCount].push(this.value);
-              }
-            }
-            let height = (end - start) * 78 + 'px';
+            height = (endY - startY) * this.width + 'px';
             this.path(height, -90, pos);
-            this.line = newLine;
           } else if (diffY === 0) {
             // 同列
-            let start, end, pos;
-            if (itemIndex > oldItemIndex) {
-              end = itemIndex;
-              start = oldItemIndex;
-              pos = 1;
-            } else {
-              end = oldItemIndex;
-              start = itemIndex;
-              pos = 0;
+            for (let i = startX; i <= endX; i++) {
+              this.activePoint(i, pointIndex);
             }
-            for (let i = start; i <= end; i++) {
-              if (!this.check[i].wrapper[pointIndex].isActive) {
-                this.value = `${i},${pointIndex}`;
-                this.check[i].wrapper[pointIndex].isActive = true;
-                this.activeCount++;
-                this.password[this.inputCount].push(this.value);
-              }
-            }
-            let height = (end - start) * 78 + 'px';
+            height = (endX - startX) * this.width + 'px';
             this.path(height, 0, pos);
-            this.line = newLine;
           } else {
-            let startX, endX, startY, endY, posX, posY, pos;
-            // 确定Y坐标起止
-            if (pointIndex > oldPointIndex) {
-              endY = pointIndex;
-              startY = oldPointIndex;
-              posY = 1;
-            } else {
-              endY = oldPointIndex;
-              startY = pointIndex;
-              posY = 0;
-            }
-            // 确定X坐标起止
-            if (itemIndex > oldItemIndex) {
-              endX = itemIndex;
-              startX = oldItemIndex;
-              posX = 1;
-            } else {
-              endX = oldItemIndex;
-              startX = itemIndex;
-              posX = 0;
-            }
-            if ((posX === 1 && posY === 1) || (posX === 0 && posY === 1)) {
-              pos = 1;
-            } else {
-              pos = 0;
-            }
-            this.value = `${itemIndex},${pointIndex}`;
-            this.check[itemIndex].wrapper[pointIndex].isActive = true;
-            this.activeCount++;
-            this.password[this.inputCount].push(this.value);
-            let k = (pointIndex - oldPointIndex) / (itemIndex - oldItemIndex);
-            let height = Math.sqrt(5) * 78 + 'px';
+            this.activePoint(itemIndex, pointIndex);
+            height = Math.sqrt(5) * this.width + 'px';
             if (k === 0.5) {
               this.path(height, -180 / Math.PI * Math.acos(2 / Math.sqrt(5)), pos);
             } else if (k === -0.5) {
@@ -331,8 +264,8 @@
             } else if (k === -2) {
               this.path(height, -180 / Math.PI * Math.acos(2 / Math.sqrt(5)) - 90, pos);
             }
-            this.line = newLine;
           }
+          this.line = newLine;
         }
       },
       // 比较两次密码是否一致
@@ -404,12 +337,12 @@
     left 0
     bottom 0
     width 100%
-    padding 70px
+    padding 50px 0
     box-sizing border-box
     background rgba(240, 240, 242, 1)
     .container
-      width 234px
-      height 234px
+      width 258px
+      height 258px
       display flex
       flex-direction column
       margin 0 auto
@@ -422,11 +355,11 @@
           align-items center
           .center
             display inline-block
-            width 40px
-            height 40px
+            width 50px
+            height 50px
             position relative
             top 50%
-            margin-top -20px
+            margin-top -26px
             border 1px solid #c3c3c4
             border-radius 50%
             background #fff
@@ -445,7 +378,7 @@
               display inline-block
               visibility hidden
               position absolute
-              top 21px
+              top 26px
               left 50%
               margin-left -1px
               margin-top -1px
@@ -463,7 +396,8 @@
       font-size 16px
       line-height 16px
     .tool
-      margin-top 50px
+      width 234px
+      margin 50px auto 0
       .set-paw, .check-paw
         padding 15px 0
         input[type=radio]
